@@ -7,6 +7,7 @@
 ## Integrantes
 
 - Priscila Amorim dos Santos - 24787350
+- Bruna Rodrigues Cardoso
 
 ## Como navegar
 
