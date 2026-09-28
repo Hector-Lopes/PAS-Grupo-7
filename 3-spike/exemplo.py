@@ -1,142 +1,99 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional
-
-
-def digest(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def stable_json(data: dict) -> str:
-    return json.dumps(data, sort_keys=True, separators=(",", ":"))
-
-
-def key_stream(key: bytes, size: int) -> bytes:
-    chunks = []
-    counter = 0
-    while sum(len(chunk) for chunk in chunks) < size:
-        counter_bytes = counter.to_bytes(4, "big")
-        chunks.append(hmac.new(key, counter_bytes, hashlib.sha256).digest())
-        counter += 1
-    return b"".join(chunks)[:size]
-
-
-def xor_bytes(left: bytes, right: bytes) -> bytes:
-    return bytes(a ^ b for a, b in zip(left, right))
-
-
-class KeyVault:
-    def __init__(self) -> None:
-        self._keys: Dict[str, bytes] = {}
-
-    def create_key(self, passenger_id: str) -> None:
-        seed = f"demo-key::{passenger_id}".encode("utf-8")
-        self._keys[passenger_id] = hashlib.sha256(seed).digest()
-
-    def destroy_key(self, passenger_id: str) -> None:
-        del self._keys[passenger_id]
-
-    def encrypt(self, passenger_id: str, value: str) -> str:
-        key = self._keys[passenger_id]
-        plain = value.encode("utf-8")
-        cipher = xor_bytes(plain, key_stream(key, len(plain)))
-        return base64.b64encode(cipher).decode("ascii")
-
-    def decrypt(self, passenger_id: str, token: str) -> Optional[str]:
-        key = self._keys.get(passenger_id)
-        if key is None:
-            return None
-        cipher = base64.b64decode(token.encode("ascii"))
-        plain = xor_bytes(cipher, key_stream(key, len(cipher)))
-        try:
-            return plain.decode("utf-8")
-        except UnicodeDecodeError:
-            return None
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 
 @dataclass(frozen=True)
 class Event:
-    sequence: int
+    tenant_id: str
     event_type: str
-    occurred_at: str
     payload: dict
-    previous_hash: str
-    event_hash: str
 
 
-class EventStore:
-    def __init__(self) -> None:
-        self._events: List[Event] = []
-
-    def append(self, event_type: str, occurred_at: str, payload: dict) -> Event:
-        sequence = len(self._events) + 1
-        previous_hash = self._events[-1].event_hash if self._events else "GENESIS"
-        body = {
-            "sequence": sequence,
-            "event_type": event_type,
-            "occurred_at": occurred_at,
-            "payload": payload,
-            "previous_hash": previous_hash,
-        }
-        event_hash = digest(stable_json(body))
-        event = Event(sequence, event_type, occurred_at, payload, previous_hash, event_hash)
-        self._events.append(event)
-        return event
-
-    def all(self) -> Iterable[Event]:
-        return tuple(self._events)
-
-    def verify_chain(self) -> bool:
-        previous_hash = "GENESIS"
-        for event in self._events:
-            body = {
-                "sequence": event.sequence,
-                "event_type": event.event_type,
-                "occurred_at": event.occurred_at,
-                "payload": event.payload,
-                "previous_hash": previous_hash,
-            }
-            if event.previous_hash != previous_hash:
-                return False
-            if event.event_hash != digest(stable_json(body)):
-                return False
-            previous_hash = event.event_hash
-        return True
+@dataclass
+class TenantConfig:
+    tenant_id: str
+    city_name: str
+    max_events_per_tick: int
+    circuit_breaker_open: bool = False
 
 
-def pseudonym(passenger_id: str) -> str:
-    return digest(f"audit-salt::{passenger_id}")[:16]
+@dataclass
+class TenantCell:
+    config: TenantConfig
+    queue: List[Event] = field(default_factory=list)
+    dead_letters: List[Event] = field(default_factory=list)
+    processed: List[Event] = field(default_factory=list)
+    operator_totals: Dict[str, int] = field(default_factory=dict)
+    duplicate_uses: List[str] = field(default_factory=list)
+    _seen_cards: Dict[tuple, str] = field(default_factory=dict)
+
+    def enqueue(self, event: Event) -> None:
+        if event.tenant_id != self.config.tenant_id:
+            raise ValueError("evento enviado para a celula errada")
+        self.queue.append(event)
+
+    def process_tick(self) -> None:
+        if self.config.circuit_breaker_open:
+            return
+
+        budget = self.config.max_events_per_tick
+        batch = self.queue[:budget]
+        self.queue = self.queue[budget:]
+
+        for event in batch:
+            try:
+                self._process(event)
+            except ValueError:
+                self.dead_letters.append(event)
+
+    def _process(self, event: Event) -> None:
+        if event.event_type == "FalhaIntegracaoExterna":
+            raise ValueError("integracao externa indisponivel")
+
+        if event.event_type != "PassagemValidada":
+            self.processed.append(event)
+            return
+
+        operator = event.payload["operator"]
+        amount = event.payload["amount_cents"]
+        card_key = (event.payload["card_pseudonym"], event.payload["counter"])
+        line = event.payload["line"]
+
+        previous_line = self._seen_cards.get(card_key)
+        if previous_line is not None and previous_line != line:
+            self.duplicate_uses.append(
+                f"{event.tenant_id}:{card_key[0]}#{card_key[1]} em {previous_line} e {line}"
+            )
+        self._seen_cards[card_key] = line
+        self.operator_totals[operator] = self.operator_totals.get(operator, 0) + amount
+        self.processed.append(event)
 
 
-def iso(day: str) -> str:
-    value = datetime.fromisoformat(f"2026-09-{day}T07:30:00+00:00")
-    return value.astimezone(timezone.utc).isoformat()
+class TenantRouter:
+    def __init__(self, cells: Dict[str, TenantCell]) -> None:
+        self.cells = cells
+
+    def publish(self, event: Event) -> None:
+        cell = self.cells[event.tenant_id]
+        cell.enqueue(event)
 
 
-def append_trip(
-    store: EventStore,
-    vault: KeyVault,
-    passenger_id: str,
-    card_id: str,
+def trip(
+    tenant_id: str,
+    card: str,
     counter: int,
     operator: str,
     line: str,
-    amount_cents: int,
-    day: str,
-) -> None:
-    store.append(
-        "PassagemValidada",
-        iso(day),
-        {
-            "passenger_ref_encrypted": vault.encrypt(passenger_id, passenger_id),
-            "card_pseudonym": pseudonym(card_id),
-            "transaction_counter": counter,
+    amount_cents: int = 550,
+) -> Event:
+    return Event(
+        tenant_id=tenant_id,
+        event_type="PassagemValidada",
+        payload={
+            "card_pseudonym": card,
+            "counter": counter,
             "operator": operator,
             "line": line,
             "amount_cents": amount_cents,
@@ -144,75 +101,72 @@ def append_trip(
     )
 
 
-def project_operator_totals(events: Iterable[Event]) -> Dict[str, int]:
-    totals: Dict[str, int] = {}
+def external_failure(tenant_id: str) -> Event:
+    return Event(tenant_id, "FalhaIntegracaoExterna", {"system": "adquirente"})
+
+
+def run_simulation() -> Dict[str, TenantCell]:
+    cells = {
+        "campinas": TenantCell(TenantConfig("campinas", "Campinas", max_events_per_tick=3)),
+        "valinhos": TenantCell(TenantConfig("valinhos", "Valinhos", max_events_per_tick=2)),
+        "sumare": TenantCell(TenantConfig("sumare", "Sumare", max_events_per_tick=1)),
+    }
+    router = TenantRouter(cells)
+
+    events = [
+        trip("campinas", "CAMP-77", 10, "Operadora Azul", "Linha 332"),
+        trip("campinas", "CAMP-77", 11, "Operadora Azul", "Linha 332"),
+        trip("campinas", "CAMP-77", 11, "Operadora Verde", "Linha 115"),
+        trip("campinas", "CAMP-99", 1, "Operadora Azul", "Linha 300"),
+        trip("campinas", "CAMP-100", 1, "Operadora Azul", "Linha 301"),
+        trip("campinas", "CAMP-101", 1, "Operadora Azul", "Linha 302"),
+        trip("campinas", "CAMP-102", 1, "Operadora Azul", "Linha 303"),
+        trip("campinas", "CAMP-103", 1, "Operadora Azul", "Linha 304"),
+        trip("campinas", "CAMP-104", 1, "Operadora Azul", "Linha 305"),
+        trip("campinas", "CAMP-105", 1, "Operadora Azul", "Linha 306"),
+        trip("campinas", "CAMP-106", 1, "Operadora Azul", "Linha 307"),
+        trip("valinhos", "VAL-1", 1, "Operadora Verde", "Linha 10"),
+        trip("valinhos", "VAL-2", 1, "Operadora Verde", "Linha 11"),
+        external_failure("valinhos"),
+        trip("sumare", "SUM-1", 1, "Operadora Laranja", "Linha 20"),
+        trip("sumare", "SUM-2", 1, "Operadora Laranja", "Linha 21"),
+    ]
+
     for event in events:
-        if event.event_type != "PassagemValidada":
-            continue
-        operator = event.payload["operator"]
-        totals[operator] = totals.get(operator, 0) + event.payload["amount_cents"]
-    return dict(sorted(totals.items()))
+        router.publish(event)
+
+    for _ in range(3):
+        for cell in cells.values():
+            cell.process_tick()
+
+    return cells
 
 
-def find_duplicate_uses(events: Iterable[Event]) -> List[str]:
-    seen: Dict[tuple, str] = {}
-    duplicates: List[str] = []
-    for event in events:
-        if event.event_type != "PassagemValidada":
-            continue
-        key = (event.payload["card_pseudonym"], event.payload["transaction_counter"])
-        bus_line = event.payload["line"]
-        if key in seen and seen[key] != bus_line:
-            duplicates.append(f"{key[0]}#{key[1]} em {seen[key]} e {bus_line}")
-        seen[key] = bus_line
-    return duplicates
-
-
-def identify_passenger(store: EventStore, vault: KeyVault, passenger_id: str) -> List[str]:
-    identities = []
-    for event in store.all():
-        encrypted = event.payload.get("passenger_ref_encrypted")
-        if not encrypted:
-            continue
-        identity = vault.decrypt(passenger_id, encrypted)
-        if identity is not None:
-            identities.append(identity)
-    return identities
+def describe_cell(cell: TenantCell) -> str:
+    totals = dict(sorted(cell.operator_totals.items()))
+    return (
+        f"{cell.config.tenant_id}: processados={len(cell.processed)}, "
+        f"fila={len(cell.queue)}, dead_letters={len(cell.dead_letters)}, "
+        f"totais={totals}, duplicidades={cell.duplicate_uses}"
+    )
 
 
 def main() -> None:
-    vault = KeyVault()
-    store = EventStore()
+    cells = run_simulation()
 
-    vault.create_key("P-100")
-    vault.create_key("P-200")
+    print("resultado_por_cidade:")
+    for tenant_id in sorted(cells):
+        print(describe_cell(cells[tenant_id]))
 
-    append_trip(store, vault, "P-100", "CARD-77", 10, "Operadora Azul", "Linha 332", 550, "10")
-    append_trip(store, vault, "P-200", "CARD-88", 5, "Operadora Verde", "Linha 410", 550, "10")
-    append_trip(store, vault, "P-100", "CARD-77", 11, "Operadora Azul", "Linha 332", 550, "11")
-    append_trip(store, vault, "P-100", "CARD-77", 11, "Operadora Verde", "Linha 115", 550, "11")
+    campinas_backlog = len(cells["campinas"].queue)
+    other_cities_processed = len(cells["valinhos"].processed) + len(cells["sumare"].processed)
+    valinhos_failure = len(cells["valinhos"].dead_letters)
+    isolated = campinas_backlog > 0 and other_cities_processed == 4 and valinhos_failure == 1
 
-    before = identify_passenger(store, vault, "P-100")
-    totals_before = project_operator_totals(store.all())
-    duplicates = find_duplicate_uses(store.all())
-
-    vault.destroy_key("P-100")
-    store.append(
-        "ChaveDestruida",
-        iso("12"),
-        {"passenger_pseudonym": pseudonym("P-100"), "reason": "pedido LGPD validado"},
-    )
-
-    after = identify_passenger(store, vault, "P-100")
-    totals_after = project_operator_totals(store.all())
-
-    print("cadeia_eventos_valida:", store.verify_chain())
-    print("identidades_P-100_antes:", before)
-    print("identidades_P-100_depois:", after)
-    print("totais_antes:", totals_before)
-    print("totais_depois:", totals_after)
-    print("duplicidades:", duplicates)
-    print("eventos_no_log:", len(tuple(store.all())))
+    print("pico_campinas_deixou_backlog:", campinas_backlog)
+    print("falha_valinhos_dead_letters:", valinhos_failure)
+    print("outras_cidades_continuaram:", other_cities_processed)
+    print("isolamento_comprovado:", isolated)
 
 
 if __name__ == "__main__":

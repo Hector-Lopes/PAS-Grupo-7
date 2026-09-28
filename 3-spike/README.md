@@ -1,8 +1,8 @@
-# Spike - crypto-shredding em eventos financeiros imutaveis
+# Spike - isolamento multi-tenant por cidade
 
-Este spike prova o ADR-0005: o sistema consegue manter eventos financeiros imutaveis e auditaveis, mas tornar dados pessoais irrecuperaveis quando uma exclusao LGPD valida for executada.
+Este spike prova o ADR-0005: uma cidade em pico ou com falha nao deve derrubar as outras cidades no mesmo produto.
 
-O programa simula um `EventStore` append-only com hash encadeado, um cofre de chaves por passageiro e eventos de passagem validada. Os eventos guardam o fato contabil necessario para repasse: operadora, linha, valor, contador de transacao e pseudonimo tecnico do cartao. O identificador pessoal do passageiro fica cifrado com uma chave individual.
+O programa simula tres cidades atendidas pela mesma plataforma. Cada cidade possui uma celula logica com fila, limite de processamento por rodada, dead-letter queue, deteccao de duplicidade e projecao de repasse por operadora. O roteador publica cada evento pela chave `tenant_id`, impedindo que eventos de uma cidade entrem na fila de outra.
 
 Para rodar:
 
@@ -20,10 +20,10 @@ O resultado esperado esta em `saida-esperada.txt`.
 
 O que a prova demonstra:
 
-- antes da exclusao, o sistema consegue decifrar os eventos do passageiro `P-100`;
-- apos destruir a chave de `P-100`, os mesmos eventos continuam no log, mas a identidade nao pode ser recuperada;
-- o fechamento por operadora continua igual antes e depois da exclusao;
-- a cadeia de hashes continua valida, mostrando que os eventos financeiros nao foram alterados;
-- uma duplicidade offline continua detectavel pelo par `cartao_pseudonimo + contador_transacao`.
+- Campinas recebe mais eventos do que consegue processar em tres rodadas, simulando pico sazonal em cidade grande;
+- Valinhos recebe uma falha de integracao externa, que vai para dead-letter queue da propria cidade;
+- Sumare continua processando suas passagens mesmo com backlog em Campinas e falha em Valinhos;
+- a duplicidade offline de Campinas continua detectavel dentro da propria celula;
+- totais por operadora sao projetados separadamente por cidade.
 
-Se a decisao estivesse errada, destruir a chave quebraria o calculo financeiro, ou entao os dados pessoais continuariam legiveis mesmo apos o pedido de esquecimento. Qualquer um dos dois resultados violaria o envelope E: ou a auditoria perderia reconstruibilidade, ou a LGPD nao seria atendida.
+Se a decisao estivesse errada, haveria uma fila compartilhada ou consumidor global: o pico de Campinas atrasaria Valinhos e Sumare, ou a falha de Valinhos pararia o processamento das demais cidades. Isso violaria diretamente o envelope D, cuja exigencia dominante e isolamento entre clientes e escala apenas onde precisa.

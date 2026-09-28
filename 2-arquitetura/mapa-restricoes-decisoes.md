@@ -1,14 +1,15 @@
 # Mapa de restricoes e decisoes
 
-## Restricoes do envelope E
+## Restricoes do envelope D
 
 | Restricao | Decisao que atende | Referencias |
 |---|---|---|
-| Operacao sob fiscalizacao do tribunal de contas sobre repasse financeiro. | Eventos financeiros append-only para validacoes, recargas, ajustes e regras tarifarias; cada fechamento mensal e uma projecao reconstruivel a partir do log. | ADR-0001, ADR-0002, ADR-0005; C4 Conteineres |
-| Nuvem publica com exigencia de trilha de auditoria completa. | Todos os servicos publicam eventos de dominio e eventos de auditoria em topicos imutaveis; observabilidade centralizada coleta logs, metricas e rastros. | ADR-0004; C4 Conteineres |
-| Tudo que acontece precisa ser reconstruivel. | Event Sourcing no repasse/conciliação e registros assinados nos validadores; regras tarifarias sao versionadas por vigencia. | ADR-0002, ADR-0005 |
-| LGPD com direito ao esquecimento. | Dados pessoais sao separados dos fatos contabeis; eventos guardam identificador cifrado e pseudonimo tecnico, com destruicao de chave individual quando houver pedido valido. | ADR-0002, ADR-0005 |
-| Equipe de 15 desenvolvedores e 1 responsavel por conformidade. | Fronteiras por subdominio com poucos servicos centrais e contratos de evento padronizados; evitar malha excessiva de microsservicos. | ADR-0001, ADR-0004 |
+| Varios clientes no mesmo sistema. | Arquitetura celular por cidade, com `tenant_id` obrigatorio em chamadas, eventos, filas, bancos/projecoes e metricas. | ADR-0001, ADR-0002, ADR-0005; C4 Conteineres |
+| Clientes variam de 200 mil a 3 milhoes de habitantes. | Plano de capacidade por cidade: cidades pequenas compartilham celula compacta; cidades grandes usam celula dedicada e consumidores escalados por fluxo. | ADR-0004, ADR-0005 |
+| Pico sazonal brutal. | Filas, topicos e consumidores particionados por cidade; informacao ao passageiro e telemetria escalam por tenant sem aumentar toda a plataforma. | ADR-0001, ADR-0004, ADR-0005 |
+| Falha em um cliente nao pode afetar os outros. | Quotas, circuit breakers, filas separadas e armazenamento particionado por cidade; falha de consumidor/projecao fica contida na celula. | ADR-0004, ADR-0005 |
+| 25 desenvolvedores em 3 times distribuidos. | Produto dividido em plataforma multi-tenant, dominio financeiro/validacao e dados/observabilidade, com contratos padronizados entre celulas. | ADR-0001, ADR-0004 |
+| Nuvem publica multirregiao. | Implantacao regional por celulas de cidades, com roteamento por cidade e replicacao apenas dos dados compartilhados de catalogo. | ADR-0004, ADR-0005 |
 
 ## Requisitos que apertam do caso Onibus
 
@@ -22,5 +23,5 @@
 | Fechamento mensal por operadora, auditado, com contestacao em ate 30 dias. | Fechamentos sao versoes de projecao derivadas do log de eventos; contestacoes geram eventos de ajuste, sem editar o passado. | ADR-0002, ADR-0005 |
 | Recalcular o mes inteiro com regras vigentes na data de cada viagem. | Regras tarifarias sao eventos versionados com periodo de vigencia; replay escolhe a regra valida para cada evento de viagem. | ADR-0002 |
 | Formatos impostos por terceiros e janelas de indisponibilidade. | Integracoes por ports and adapters, filas de saida e jobs de reentrega idempotente para banco/adquirente/operadoras. | ADR-0003 |
-| Historico de viagens identificado e dado pessoal sob LGPD. | Separar identidade do passageiro do fato de viagem; criptografia por titular e destruicao de chave para anonimizar eventos antigos. | ADR-0005 |
+| Historico de viagens identificado e dado pessoal sob LGPD. | Dados pessoais ficam no cadastro da cidade; fatos financeiros usam pseudonimos e politica de minimizacao por tenant, sem misturar bases entre cidades. | ADR-0002, ADR-0005 |
 | Atendimento precisa de trilha de quem alterou o que. | Alteracoes administrativas geram eventos de auditoria com usuario, papel, motivo e correlacao com solicitacao. | ADR-0004 |

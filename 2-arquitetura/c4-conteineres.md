@@ -13,20 +13,24 @@ flowchart TB
     end
 
     api["API Gateway"]
-    cartoes["Servico de Cartoes e Recargas\n(escrita transacional)"]
-    tarifas["Catalogo de Tarifas\n(regras versionadas)"]
-    broker["Broker de Eventos"]
-    eventstore["Event Store financeiro\n(append-only)"]
-    telemetria["Pipeline de Telemetria\n(pipes and filters)"]
-    passageiroInfo["Informacao ao Passageiro\n(cache/projecoes)"]
-    repasse["Repasse e Conciliacao\n(CQRS + replay)"]
+    tenantRouter["Roteador de Cidade\n(tenant_id)"]
+    tenantCatalog["Catalogo de Tenants\n(cidade, regiao, plano)"]
+    cartoes["Cartoes e Recargas\npor cidade"]
+    tarifas["Catalogo de Tarifas\npor cidade"]
+    broker["Broker/Filas da Celula\nparticionado por cidade"]
+    eventstore["Event Store financeiro\npor cidade"]
+    telemetria["Pipeline de Telemetria\npor cidade"]
+    passageiroInfo["Informacao ao Passageiro\ncache/projecoes por cidade"]
+    repasse["Repasse e Conciliacao\npor cidade"]
     integracoes["Adaptadores externos\n(ports and adapters)"]
-    auditoriaSvc["Servico de Auditoria e Chaves"]
+    observabilidade["Observabilidade e Quotas\npor tenant"]
 
     passageiro -- "chamada" --> api
     recargaExterna -- "chamada" --> api
-    api -- "chamada" --> cartoes
-    api -- "chamada" --> passageiroInfo
+    api -- "chamada" --> tenantRouter
+    tenantRouter -- "chamada" --> tenantCatalog
+    tenantRouter -- "chamada" --> cartoes
+    tenantRouter -- "chamada" --> passageiroInfo
     cartoes -- "chamada" --> banco
     cartoes -- "evento" --> broker
     tarifas -- "evento" --> broker
@@ -39,6 +43,6 @@ flowchart TB
     repasse -- "arquivo" --> auditoria
     repasse -- "arquivo" --> operador
     integracoes -- "chamada/arquivo" --> banco
-    broker -- "evento" --> auditoriaSvc
-    auditoriaSvc -- "evento" --> eventstore
+    broker -- "evento" --> observabilidade
+    observabilidade -- "evento" --> tenantCatalog
 ```

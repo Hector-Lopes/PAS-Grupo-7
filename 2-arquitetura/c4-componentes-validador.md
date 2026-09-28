@@ -15,8 +15,8 @@ flowchart TB
     sync["Sincronizador 4G"]
     assinatura["Verificador de assinaturas"]
 
-    broker["Broker central"]
-    catalogo["Catalogo de Tarifas"]
+    broker["Broker da cidade"]
+    catalogo["Catalogo de Tarifas\nda cidade"]
 
     cartao -- "chamada" --> leitor
     motorista -- "chamada" --> regraCore
@@ -28,7 +28,7 @@ flowchart TB
     transacoes -- "fila" --> outbox
     gps -- "fluxo" --> outbox
     outbox -- "fila" --> sync
-    sync -- "evento/fluxo" --> broker
+    sync -- "evento/fluxo com tenant_id" --> broker
     catalogo -- "evento: pacote assinado de regras" --> sync
     sync -- "evento" --> bloqueios
     sync -- "evento" --> plugins

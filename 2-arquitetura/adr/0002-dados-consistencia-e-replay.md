@@ -7,6 +7,7 @@ Aceita.
 ## Contexto
 
 O caso mistura dados financeiros, dados pessoais, eventos offline e necessidade de recalculo mensal. O sistema deve impedir fraude de recarga, detectar uso duplicado depois da reconexao e recalcular repasses com regras historicas.
+No envelope D, os mesmos mecanismos precisam funcionar por cidade sem misturar dados ou permitir que o volume de uma cidade atrase outra.
 
 ## Decisao
 
@@ -15,25 +16,25 @@ Definir donos de dados por subdominio:
 | Dado | Dono | Consistencia |
 |---|---|---|
 | Saldo central, recargas e bloqueios | Cartoes e Recargas | Escrita transacional forte. |
-| Validacoes offline | Validador local ate sincronizar; depois Event Store | Consistencia eventual com conciliacao. |
-| Eventos financeiros | Event Store de Repasse | Append-only, imutavel, replay. |
+| Validacoes offline | Validador local ate sincronizar; depois Event Store da cidade | Consistencia eventual com conciliacao. |
+| Eventos financeiros | Event Store de Repasse por cidade | Append-only, imutavel, replay. |
 | Regras tarifarias | Catalogo de Tarifas | Versionadas por vigencia. |
-| Projecoes de consulta | Servicos de leitura | Recriaveis a partir dos eventos. |
-| Dados pessoais do passageiro | Cadastro de Passageiros | Separados dos fatos contabeis e cifrados quando referenciados em eventos. |
+| Projecoes de consulta | Servicos de leitura por cidade | Recriaveis a partir dos eventos. |
+| Dados pessoais do passageiro | Cadastro de Passageiros da cidade | Separados dos fatos contabeis e minimizados nos eventos. |
 
-Cada validacao usa um contador monotonicamente crescente por cartao. O par `cartao_pseudonimo + contador_transacao` e idempotency key para detectar duplicidade entre onibus. Recargas confirmadas geram recibos assinados e eventos idempotentes.
+Cada validacao usa um contador monotonicamente crescente por cartao. O par `tenant_id + cartao_pseudonimo + contador_transacao` e idempotency key para detectar duplicidade entre onibus sem cruzar cidades. Recargas confirmadas geram recibos assinados e eventos idempotentes.
 
 ## Alternativas consideradas
 
 - Banco relacional unico: descartado porque validadores offline nao conseguiriam depender dele e porque replay historico ficaria acoplado ao modelo atual.
 - Sincronizacao por sobrescrita de saldo: descartada porque perderia conflitos offline e dificultaria auditoria.
-- Apagar eventos antigos para atender LGPD: descartado porque quebraria fechamento financeiro e trilha regulatoria.
+- Event Store unico para todas as cidades: descartado porque aumenta risco de vazamento entre clientes e cria competicao por recursos.
 
 ## Consequencias positivas
 
 - O fechamento mensal e reconstruivel.
 - Duplicidades e fraudes ficam detectaveis mesmo quando surgem apos reconexao.
-- Leitura e relatorio podem escalar por projecoes sem afetar a escrita.
+- Leitura e relatorio podem escalar por projecoes de cada cidade sem afetar a escrita das demais.
 
 ## Consequencias negativas
 

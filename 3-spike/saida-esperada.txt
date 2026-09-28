@@ -1,7 +1,8 @@
-cadeia_eventos_valida: True
-identidades_P-100_antes: ['P-100', 'P-100', 'P-100']
-identidades_P-100_depois: []
-totais_antes: {'Operadora Azul': 1100, 'Operadora Verde': 1100}
-totais_depois: {'Operadora Azul': 1100, 'Operadora Verde': 1100}
-duplicidades: ['d02a1154483a742b#11 em Linha 332 e Linha 115']
-eventos_no_log: 5
+resultado_por_cidade:
+campinas: processados=9, fila=2, dead_letters=0, totais={'Operadora Azul': 4400, 'Operadora Verde': 550}, duplicidades=['campinas:CAMP-77#11 em Linha 332 e Linha 115']
+sumare: processados=2, fila=0, dead_letters=0, totais={'Operadora Laranja': 1100}, duplicidades=[]
+valinhos: processados=2, fila=0, dead_letters=1, totais={'Operadora Verde': 1100}, duplicidades=[]
+pico_campinas_deixou_backlog: 2
+falha_valinhos_dead_letters: 1
+outras_cidades_continuaram: 4
+isolamento_comprovado: True
