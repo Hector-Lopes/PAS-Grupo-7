@@ -8,6 +8,7 @@
 
 - Priscila Amorim dos Santos - 24787350
 - Bruna Rodrigues Cardoso
+- Hector Lopes - 25013988
 
 ## Como navegar
 
