@@ -1,0 +1,7 @@
+cadeia_eventos_valida: True
+identidades_P-100_antes: ['P-100', 'P-100', 'P-100']
+identidades_P-100_depois: []
+totais_antes: {'Operadora Azul': 1100, 'Operadora Verde': 1100}
+totais_depois: {'Operadora Azul': 1100, 'Operadora Verde': 1100}
+duplicidades: ['d02a1154483a742b#11 em Linha 332 e Linha 115']
+eventos_no_log: 5

@@ -12,12 +12,10 @@
 
 ## Como navegar
 
-| Pasta | Conteúdo |
-|---|---|
-| `1-matriz/` | Matriz de estilos aplicada ao caso Saúde + envelope B (Entrega 1) |
-| `2-arquitetura/` | Diagramas C4 (contexto, contêineres, componentes), mapa de restrições e decisões, ADRs (Entrega 2) |
-| `3-spike/` | Código pequeno que prova a decisão mais arriscada (Entrega 3) |
-| `4-leitura-cruzada/` | Objeções enviadas e respostas recebidas na leitura cruzada com o grupo que revisou o mesmo caso, envelope diferente (Entrega 4) |
-| `5-final/` | CHANGELOG com o que mudou depois da leitura cruzada (Entrega 5) |
+- `1-matriz/matriz.md`: matriz de estilos aplicada ao caso.
+- `2-arquitetura/`: diagramas C4, mapa de restricoes e decisoes, ADRs e respostas obrigatorias.
+- `3-spike/`: codigo pequeno que prova a decisao mais arriscada.
 
-Para entender rapidamente as decisões do grupo, comece pela matriz (`1-matriz/matriz.md`), depois leia os ADRs em `2-arquitetura/adr/`, na ordem numérica — eles registram, nessa sequência, a estrutura geral, os dados, a integração com o legado, a operação/implantação e a decisão mais arriscada provada pelo spike.
+## Resumo da proposta
+
+A arquitetura e hibrida. A validacao embarcada usa estilo hexagonal com microkernel de regras para operar offline. O backend central combina microsservicos por subdominio, arquitetura orientada a eventos, CQRS e Event Sourcing nos fluxos que exigem auditoria e reprocessamento. Dados pessoais em eventos imutaveis sao cifrados com chave por titular, permitindo auditoria financeira sem manter identificacao pessoal apos pedido valido de exclusao.
