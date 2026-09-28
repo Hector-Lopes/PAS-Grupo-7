@@ -2,7 +2,7 @@
 
 Este repositorio contem a proposta de arquitetura para o caso **Onibus: bilhetagem e mobilidade urbana**, considerando o envelope **D: empresa que vende o sistema para varias cidades**.
 
-##Integrantes
+## Integrantes
 - Priscila Amorim dos Santos - 24787350
 - Bruna Rodrigues Cardoso
 - Hector Lopes - 25013988
